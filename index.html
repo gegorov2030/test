@@ -548,9 +548,11 @@
         const cz = Math.floor(pz/CHUNK_SIZE);
         if (cx===this.centerCx && cz===this.centerCz) return;
         this.centerCx = cx; this.centerCz = cz;
+        if (!this.world) return;
         this.rebuildQueue();
       }
       rebuildQueue(){
+        if (!this.world) return;
         this.queue.length = 0;
         const r = this.viewDistance;
         for (let dz=-r; dz<=r; dz++){
@@ -565,6 +567,7 @@
       }
       processNext(){
         if (this.processing) return;
+        if (!this.world) return;
         const task = this.queue.shift();
         if (!task) return;
         this.processing = true;
@@ -578,6 +581,7 @@
         setTimeout(()=>this.processNext(), 0);
       }
       tick(){
+        if (!this.world) return;
         // Could check for dirty columns and rebuild
         if (this.world.dirtyColumns.size>0){
           for (const k of this.world.dirtyColumns){
@@ -754,8 +758,10 @@
       if (placeCooldown>0) placeCooldown -= dt; if (placeCooldown<0) placeCooldown=0;
 
       camera._computeLocalCameraSpeed();
-      chunkManager.updateCenter(camera.position.x, camera.position.z);
-      chunkManager.tick();
+      if (world) {
+        chunkManager.updateCenter(camera.position.x, camera.position.z);
+        chunkManager.tick();
+      }
 
       scene.render();
 
