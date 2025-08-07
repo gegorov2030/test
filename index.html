@@ -466,16 +466,18 @@
           vData.applyToMesh(mesh);
           mesh.material = type==='alpha' ? materialAlpha : type==='water' ? materials.water : materialOpaque;
           mesh.checkCollisions = type==='opaque';
-          mesh.alwaysSelectAsActiveMesh = true;
           mesh.position.x = col.cx * CHUNK_SIZE;
           mesh.position.y = baseY;
           mesh.position.z = col.cz * CHUNK_SIZE;
           mesh.renderingGroupId = (type==='opaque') ? 0 : (type==='alpha' ? 1 : 2);
+          // Ensure proper world matrix and bounding infos
           mesh.computeWorldMatrix(true);
-          if (!mesh.subMeshes || mesh.subMeshes.length === 0) {
-            new BABYLON.SubMesh(0, 0, p.length/3, 0, idx.length, mesh);
-          }
           mesh.refreshBoundingInfo(true);
+          // Recreate a single submesh covering the geometry
+          mesh.subMeshes = [];
+          new BABYLON.SubMesh(0, 0, p.length/3, 0, idx.length, mesh);
+          mesh.refreshBoundingInfo(true);
+          mesh.alwaysSelectAsActiveMesh = true;
           return mesh;
         }
 
