@@ -470,6 +470,9 @@
           mesh.position.x = col.cx * CHUNK_SIZE;
           mesh.position.y = baseY;
           mesh.position.z = col.cz * CHUNK_SIZE;
+          mesh.renderingGroupId = (type==='opaque') ? 0 : 1;
+          mesh.computeWorldMatrix(true);
+          mesh.refreshBoundingInfo(true);
           return mesh;
         }
 
@@ -694,7 +697,7 @@
     matWater.backFaceCulling = false;
     matWater.transparencyMode = BABYLON.Material.MATERIAL_ALPHABLEND;
     matWater.separateCullingPass = true;
-    matWater.needDepthPrePass = true;
+    matWater.needDepthPrePass = false;
     matWater.freeze();
 
     const materials = { atlas: atlasTexture, opaque: matOpaque, alpha: matAlpha, water: matWater };
@@ -755,6 +758,13 @@
         camera.applyGravity = !flyMode;
         camera.checkCollisions = !flyMode;
         camera.speed = flyMode ? 0.6 : (sprinting ? 0.6 : 0.35);
+      }
+      if (e.code === 'KeyG'){
+        // Explicitly toggle off fly mode if needed
+        flyMode = false;
+        camera.applyGravity = true;
+        camera.checkCollisions = true;
+        camera.speed = sprinting ? 0.6 : 0.35;
       }
       if (e.code === 'ShiftLeft' || e.code === 'ShiftRight'){
         sprinting = true;
