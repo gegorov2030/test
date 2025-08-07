@@ -472,6 +472,9 @@
           mesh.position.z = col.cz * CHUNK_SIZE;
           mesh.renderingGroupId = (type==='opaque') ? 0 : (type==='alpha' ? 1 : 2);
           mesh.computeWorldMatrix(true);
+          if (!mesh.subMeshes || mesh.subMeshes.length === 0) {
+            new BABYLON.SubMesh(0, 0, p.length/3, 0, idx.length, mesh);
+          }
           mesh.refreshBoundingInfo(true);
           return mesh;
         }
