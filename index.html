@@ -822,9 +822,9 @@
       const maxY = yFeet + player.height;
       const minZ = z - player.halfWidth;
       const maxZ = z + player.halfWidth;
-      for (let yy = Math.floor(minY); yy <= Math.floor(maxY); yy++){
-        for (let zz = Math.floor(minZ); zz <= Math.floor(maxZ); zz++){
-          for (let xx = Math.floor(minX); xx <= Math.floor(maxX); xx++){
+      for (let yy = Math.floor(minY); yy <= Math.floor(maxY - 1e-6); yy++){
+        for (let zz = Math.floor(minZ); zz <= Math.floor(maxZ - 1e-6); zz++){
+          for (let xx = Math.floor(minX); xx <= Math.floor(maxX - 1e-6); xx++){
             if (isSolid(xx, yy, zz)) return true;
           }
         }
@@ -833,56 +833,62 @@
     }
     function resolveAxis(x, yFeet, z, dx, dy, dz){
       let nx = x, ny = yFeet, nz = z;
-      // X
-      if (dx !== 0){
-        const step = Math.sign(dx) * Math.min(Math.abs(dx), 0.6);
-        nx += step;
-        if (aabbIntersects(nx, ny, nz)){
-          // try step-up if grounded
-          if (player.grounded){
-            const stepHeight = 0.6;
-            const tryNy = ny + stepHeight;
-            if (!aabbIntersects(nx, tryNy, nz)) {
-              ny = tryNy;
+      // Horizontal sweep in small steps to avoid tunneling
+      const steps = Math.ceil(Math.max(Math.abs(dx), Math.abs(dz)) / 0.25);
+      const stepx = steps>0 ? dx/steps : 0;
+      const stepz = steps>0 ? dz/steps : 0;
+      for (let i=0;i<Math.max(1,steps);i++){
+        // X
+        if (stepx !== 0){
+          nx += stepx;
+          if (aabbIntersects(nx, ny, nz)){
+            // try step-up if grounded
+            if (player.grounded){
+              const stepHeight = 0.6;
+              const tryNy = ny + stepHeight;
+              if (!aabbIntersects(nx, tryNy, nz)) {
+                ny = tryNy;
+              } else {
+                nx -= stepx; // cancel X step
+              }
             } else {
-              nx = x; // cancel X
+              nx -= stepx;
             }
-          } else {
-            nx = x;
+          }
+        }
+        // Z
+        if (stepz !== 0){
+          nz += stepz;
+          if (aabbIntersects(nx, ny, nz)){
+            if (player.grounded){
+              const stepHeight = 0.6;
+              const tryNy = ny + stepHeight;
+              if (!aabbIntersects(nx, tryNy, nz)) {
+                ny = tryNy;
+              } else {
+                nz -= stepz;
+              }
+            } else {
+              nz -= stepz;
+            }
           }
         }
       }
-      // Z
-      if (dz !== 0){
-        const step = Math.sign(dz) * Math.min(Math.abs(dz), 0.6);
-        nz += step;
-        if (aabbIntersects(nx, ny, nz)){
-          if (player.grounded){
-            const stepHeight = 0.6;
-            const tryNy = ny + stepHeight;
-            if (!aabbIntersects(nx, tryNy, nz)) {
-              ny = tryNy;
-            } else {
-              nz = z;
-            }
-          } else {
-            nz = z;
-          }
-        }
-      }
-      // Y
+      // Vertical resolve
       if (dy !== 0){
-        ny += dy;
-        if (aabbIntersects(nx, ny, nz)){
-          if (dy < 0){
-            // snap to top of block
-            ny = Math.floor(ny) + 1e-3;
-            player.grounded = true;
-          } else {
-            // hit ceiling
-            ny = Math.ceil(ny + player.height) - player.height - 1e-3;
+        const vsteps = Math.ceil(Math.abs(dy) / 0.25);
+        const stepy = dy / Math.max(1,vsteps);
+        for (let i=0;i<Math.max(1,vsteps);i++){
+          ny += stepy;
+          if (aabbIntersects(nx, ny, nz)){
+            if (stepy < 0){
+              ny = Math.floor(ny) + 1 + 1e-3;
+              player.grounded = true;
+            } else {
+              ny = Math.ceil(ny + player.height) - player.height - 1e-3;
+            }
+            break;
           }
-          dy = 0;
         }
       }
       return { x:nx, yFeet:ny, z:nz, dy };
