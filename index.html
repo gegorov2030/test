@@ -723,6 +723,16 @@
     let world = null;
     const chunkManager = new ChunkManager(scene, null, materials);
 
+    // Highlight box for targeted block
+    const highlightBox = BABYLON.MeshBuilder.CreateBox("highlightBox", { size: 1.02 }, scene);
+    const highlightMat = new BABYLON.StandardMaterial("highlightMat", scene);
+    highlightMat.emissiveColor = new BABYLON.Color3(1,1,1);
+    highlightMat.disableLighting = true;
+    highlightMat.wireframe = true;
+    highlightBox.material = highlightMat;
+    highlightBox.isPickable = false;
+    highlightBox.setEnabled(false);
+
     // FPS and stats
     const fpsEl = document.getElementById('fps');
 
@@ -770,6 +780,19 @@
     let sprinting = false;
     let flyUp = false, flyDown = false;
     const inputState = { f:false,b:false,l:false,r:false };
+    let crouching = false;
+    let mining = false;
+    let miningStartTime = 0;
+    let miningTarget = null;
+    const hardnessByBlock = {
+      [BLOCK.Grass]: 0.5,
+      [BLOCK.Dirt]: 0.4,
+      [BLOCK.Stone]: 1.5,
+      [BLOCK.Sand]: 0.3,
+      [BLOCK.Log]: 0.8,
+      [BLOCK.Leaves]: 0.2,
+      [BLOCK.Water]: Infinity,
+    };
     window.addEventListener('keydown', (e)=>{
       if (e.code === 'KeyF'){
         flyMode = !flyMode;
@@ -783,6 +806,9 @@
       if (e.code === 'ShiftLeft' || e.code === 'ShiftRight'){
         sprinting = true;
         if (flyMode) flyDown = true;
+      }
+      if (e.code === 'ControlLeft' || e.code === 'ControlRight'){
+        crouching = true;
       }
       if (e.code === 'Space'){
         if (flyMode) flyUp = true; else {
@@ -802,6 +828,9 @@
       }
       if (e.code === 'Space'){
         if (flyMode) flyUp = false;
+      }
+      if (e.code === 'ControlLeft' || e.code === 'ControlRight'){
+        crouching = false;
       }
       if (e.code==='KeyW' || e.code==='ArrowUp') inputState.f = false;
       if (e.code==='KeyS' || e.code==='ArrowDown') inputState.b = false;
@@ -922,8 +951,9 @@
       if (wish.lengthSquared() > 0) wish.normalize();
 
       const moveSpeed = (sprinting? 6.0 : 3.6); // m/s
-      const dx = wish.x * moveSpeed * dt;
-      const dz = wish.z * moveSpeed * dt;
+      const crouchMul = crouching ? 0.55 : 1.0;
+      const dx = wish.x * moveSpeed * crouchMul * dt;
+      const dz = wish.z * moveSpeed * crouchMul * dt;
 
       // Gravity and jump (unless fly)
       if (!flyMode){
@@ -951,6 +981,14 @@
       camera.position.x = solved.x;
       camera.position.z = solved.z;
       camera.position.y = yFeet + player.eyeOffset;
+      // Apply crouch body size
+      if (crouching) {
+        player.height = 1.3;
+        player.eyeOffset = 1.25;
+      } else {
+        player.height = 1.8;
+        player.eyeOffset = 1.6;
+      }
     }
 
     function startGame() {
@@ -994,11 +1032,24 @@
     scene.onPointerObservable.add((evt)=>{
       if (!world) return;
       if (evt.type !== BABYLON.PointerEventTypes.POINTERDOWN) return;
+      if (evt.event.button === 1) { // MMB pick block
+        const pick = voxelRaycast(world, camera.globalPosition, camera.getForwardRay().direction, 6);
+        if (pick.hit) {
+          const id = world.getBlock(pick.x, pick.y, pick.z);
+          if (id && id !== BLOCK.Air) {
+            // select in hotbar if exists
+            const idx = HOTBAR_BLOCKS.indexOf(id);
+            if (idx >= 0) setSelected(idx);
+          }
+        }
+        return;
+      }
       const pick = voxelRaycast(world, camera.globalPosition, camera.getForwardRay().direction, 6);
       if (!pick.hit) return;
       if (evt.event.button === 0) { // break
-        if (breakCooldown>0) return; breakCooldown=120; // ms
-        world.setBlock(pick.x, pick.y, pick.z, BLOCK.Air);
+        mining = true;
+        miningStartTime = performance.now();
+        miningTarget = { x: pick.x, y: pick.y, z: pick.z };
       } else if (evt.event.button === 2) { // place
         if (placeCooldown>0) return; placeCooldown=120;
         const placeId = HOTBAR_BLOCKS[selectedHotbar] || BLOCK.Grass;
@@ -1009,6 +1060,11 @@
         if (curr === BLOCK.Air || BlockProps[curr].liquid) {
           world.setBlock(px, py, pz, placeId);
         }
+      }
+    });
+    scene.onPointerObservable.add((evt)=>{
+      if (evt.type === BABYLON.PointerEventTypes.POINTERUP) {
+        if (evt.event.button === 0) { mining = false; miningTarget = null; }
       }
     });
 
@@ -1044,6 +1100,27 @@
           scene.fogColor = new BABYLON.Color3(0.55, 0.75, 0.98);
           scene.fogStart = CHUNK_SIZE * (chunkManager.viewDistance - 2);
           scene.fogEnd = CHUNK_SIZE * chunkManager.viewDistance;
+        }
+      }
+
+      // Target highlight and mining timer
+      const pick = voxelRaycast(world, camera.globalPosition, camera.getForwardRay().direction, 6);
+      if (pick.hit) {
+        highlightBox.setEnabled(true);
+        highlightBox.position.set(pick.x+0.5, pick.y+0.5, pick.z+0.5);
+      } else {
+        highlightBox.setEnabled(false);
+      }
+      if (mining && miningTarget) {
+        const id = world.getBlock(miningTarget.x, miningTarget.y, miningTarget.z);
+        const hardness = hardnessByBlock[id] ?? 0.5;
+        const elapsed = performance.now() - miningStartTime;
+        // simple progress: hardness seconds * 1000
+        if (elapsed >= hardness * 1000) {
+          if (id && id !== BLOCK.Air && !BlockProps[id].liquid) {
+            world.setBlock(miningTarget.x, miningTarget.y, miningTarget.z, BLOCK.Air);
+          }
+          mining = false; miningTarget = null;
         }
       }
 
