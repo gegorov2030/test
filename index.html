@@ -26,11 +26,18 @@
     #overlay input[type="range"] { flex: 1; }
     #overlay button { padding: 8px 12px; border: 0; border-radius: 6px; background: #4a90e2; color:#fff; cursor: pointer; }
     #overlay .title { font-size: 18px; margin-bottom: 8px; }
+    /* Underwater overlay */
+    #underwater-overlay { position: fixed; left:0; top:0; right:0; bottom:0; pointer-events: none; display: none; z-index: 2;
+      background: linear-gradient(to bottom, rgba(20,60,120,0.0) 0%, rgba(20,60,120,0.25) 50%, rgba(10,40,80,0.35) 100%);
+    }
+    #underwater-overlay.active { display: block; animation: waterPulse 3s ease-in-out infinite; }
+    @keyframes waterPulse { 0%,100%{opacity:0.85} 50%{opacity:0.65} }
   </style>
 </head>
 <body>
   <canvas id="game"></canvas>
   <div id="ui-root">
+    <div id="underwater-overlay"></div>
     <div id="crosshair"></div>
     <div id="fps">FPS: -- | Chunks: 0 | Tris: 0</div>
     <div id="hint">WASD — ходьба, Space — прыжок, Shift — бег, колесо/1-8 — блок, ЛКМ — ломать, ПКМ — ставить, Esc — настройки</div>
@@ -642,7 +649,7 @@
     scene.collisionsEnabled = true;
     // Sky and fog for better visuals
     scene.clearColor = new BABYLON.Color4(0.55, 0.75, 0.98, 1.0);
-    scene.fogMode = BABYLON.Scene.FOGMODE_EXP2;
+    scene.fogMode = BABYLON.Scene.FOGMODE_LINEAR;
     scene.fogDensity = 0.0045;
     scene.fogColor = new BABYLON.Color3(0.55, 0.75, 0.98);
 
@@ -814,6 +821,10 @@
     function isSolid(wx, wy, wz){
       const id = world ? world.getBlock(wx, wy, wz) : BLOCK.Air;
       return id !== BLOCK.Air && BlockProps[id].solid && !BlockProps[id].liquid;
+    }
+    function isLiquid(wx, wy, wz){
+      const id = world ? world.getBlock(wx, wy, wz) : BLOCK.Air;
+      return BlockProps[id].liquid === true;
     }
     function aabbIntersects(x, yFeet, z){
       const minX = x - player.halfWidth;
@@ -1016,6 +1027,24 @@
         chunkManager.processBudget(10);
         // Update player physics
         tickPlayer(dt);
+        // Underwater overlay and fog
+        const headX = Math.floor(camera.position.x);
+        const headY = Math.floor(camera.position.y);
+        const headZ = Math.floor(camera.position.z);
+        const underwater = isLiquid(headX, headY, headZ);
+        const overlay = document.getElementById('underwater-overlay');
+        if (underwater) {
+          overlay.classList.add('active');
+          scene.fogMode = BABYLON.Scene.FOGMODE_EXP;
+          scene.fogDensity = 0.08;
+          scene.fogColor = new BABYLON.Color3(0.1, 0.3, 0.5);
+        } else {
+          overlay.classList.remove('active');
+          scene.fogMode = BABYLON.Scene.FOGMODE_LINEAR;
+          scene.fogColor = new BABYLON.Color3(0.55, 0.75, 0.98);
+          scene.fogStart = CHUNK_SIZE * (chunkManager.viewDistance - 2);
+          scene.fogEnd = CHUNK_SIZE * chunkManager.viewDistance;
+        }
       }
 
       // no direct camera.move here; physics controls movement
