@@ -470,7 +470,7 @@
           mesh.position.x = col.cx * CHUNK_SIZE;
           mesh.position.y = baseY;
           mesh.position.z = col.cz * CHUNK_SIZE;
-          mesh.renderingGroupId = (type==='opaque') ? 0 : 1;
+          mesh.renderingGroupId = (type==='opaque') ? 0 : (type==='alpha' ? 1 : 2);
           mesh.computeWorldMatrix(true);
           mesh.refreshBoundingInfo(true);
           return mesh;
@@ -692,12 +692,15 @@
 
     const matWater = new BABYLON.StandardMaterial("matWater", scene);
     matWater.diffuseTexture = atlasTexture;
-    matWater.alpha = 0.5;
+    matWater.alpha = 0.7;
+    matWater.emissiveColor = new BABYLON.Color3(0.15, 0.28, 0.7);
+    matWater.disableLighting = true;
     matWater.specularColor = new BABYLON.Color3(0,0,0);
     matWater.backFaceCulling = false;
     matWater.transparencyMode = BABYLON.Material.MATERIAL_ALPHABLEND;
     matWater.separateCullingPass = true;
     matWater.needDepthPrePass = false;
+    matWater.fogEnabled = false;
     matWater.freeze();
 
     const materials = { atlas: atlasTexture, opaque: matOpaque, alpha: matAlpha, water: matWater };
