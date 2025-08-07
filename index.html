@@ -719,7 +719,12 @@
       chunkManager.world = world;
       chunkManager.setViewDistance(parseInt(viewDistInput.value,10) || DEFAULTS.viewDistance);
       camera.position.set(0, 80, 0);
+      // reset manager state and kick generation
+      chunkManager.processing = false;
+      chunkManager.queue.length = 0;
       chunkManager.updateCenter(camera.position.x, camera.position.z);
+      chunkManager.rebuildQueue();
+      chunkManager.processNext();
     }
 
     btnStart.addEventListener('click', startGame);
