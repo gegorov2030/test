@@ -252,6 +252,7 @@
         this.subchunks = new Array(NUM_SUBCHUNKS);
         this.meshesOpaque = new Array(NUM_SUBCHUNKS);
         this.meshesAlpha = new Array(NUM_SUBCHUNKS);
+        this.meshesWater = new Array(NUM_SUBCHUNKS); // Added for water
         this.version = 0;
         for (let i=0;i<NUM_SUBCHUNKS;i++) this.subchunks[i] = null; // allocated on demand
       }
@@ -380,10 +381,11 @@
     function buildSubchunkMeshes(scene, atlas, materialOpaque, materialAlpha, world, col) {
       const uTile = 1/16, vTile = 1/16; // atlas grid 16x16
       const positionsO=[]; const normalsO=[]; const uvsO=[]; const indicesO=[];
-      const positionsA=[]; const normalsA=[]; const uvsA=[]; const indicesA=[];
+      const positionsA=[]; const normalsA=[]; const uvsA=[]; const indicesA=[]; // leaves etc
+      const positionsW=[]; const normalsW=[]; const uvsW=[]; const indicesW=[]; // water
 
-      function pushFace(arr, nx, ny, nz, x, y, z, uvs, isAlpha){
-        const [p, n, u, idx] = isAlpha ? [positionsA, normalsA, uvsA, indicesA] : [positionsO, normalsO, uvsO, indicesO];
+      function pushFace(target, nx, ny, nz, x, y, z, uvs){
+        const [p, n, u, idx] = target;
         const base = p.length/3;
         let vx = [];
         if (nx===1 && ny===0 && nz===0) { // +X
@@ -427,43 +429,45 @@
               const id = arr[lx + ly*CHUNK_SIZE + lz*CHUNK_SIZE*SUBCHUNK_HEIGHT] || 0;
               if (id === BLOCK.Air) continue;
               const props = BlockProps[id];
-              const isAlpha = props.transparent || props.liquid;
+              const isAlpha = props.transparent && !props.liquid;
               const wx = col.cx*CHUNK_SIZE + lx;
               const wy = baseY + ly;
               const wz = col.cz*CHUNK_SIZE + lz;
               const neighbor = (nx,ny,nz) => world.getBlock(wx+nx, wy+ny, wz+nz);
               const neighborOpaque = (nx,ny,nz) => BlockProps[neighbor(nx,ny,nz)].opaque;
+              const neighborLiquid = (nx,ny,nz) => BlockProps[neighbor(nx,ny,nz)].liquid;
+              const target = props.liquid ? [positionsW, normalsW, uvsW, indicesW] : (isAlpha ? [positionsA, normalsA, uvsA, indicesA] : [positionsO, normalsO, uvsO, indicesO]);
               // +X
-              if (!neighborOpaque(1,0,0)) pushFace(positionsO, +1,0,0, lx, baseY+ly, lz, tileFor(id,'side'), isAlpha);
+              if (!neighborOpaque(1,0,0) && (!props.liquid || !neighborLiquid(1,0,0))) pushFace(target, +1,0,0, lx, baseY+ly, lz, tileFor(id,'side'));
               // -X
-              if (!neighborOpaque(-1,0,0)) pushFace(positionsO, -1,0,0, lx, baseY+ly, lz, tileFor(id,'side'), isAlpha);
+              if (!neighborOpaque(-1,0,0) && (!props.liquid || !neighborLiquid(-1,0,0))) pushFace(target, -1,0,0, lx, baseY+ly, lz, tileFor(id,'side'));
               // +Y
-              if (!neighborOpaque(0,1,0)) pushFace(positionsO, 0,1,0, lx, baseY+ly, lz, tileFor(id,'top'), isAlpha);
+              if (!neighborOpaque(0,1,0) && (!props.liquid || !neighborLiquid(0,1,0))) pushFace(target, 0,1,0, lx, baseY+ly, lz, tileFor(id,'top'));
               // -Y
-              if (!neighborOpaque(0,-1,0)) pushFace(positionsO, 0,-1,0, lx, baseY+ly, lz, tileFor(id,'bottom'), isAlpha);
+              if (!neighborOpaque(0,-1,0) && (!props.liquid || !neighborLiquid(0,-1,0))) pushFace(target, 0,-1,0, lx, baseY+ly, lz, tileFor(id,'bottom'));
               // +Z
-              if (!neighborOpaque(0,0,1)) pushFace(positionsO, 0,0,1, lx, baseY+ly, lz, tileFor(id,'side'), isAlpha);
+              if (!neighborOpaque(0,0,1) && (!props.liquid || !neighborLiquid(0,0,1))) pushFace(target, 0,0,1, lx, baseY+ly, lz, tileFor(id,'side'));
               // -Z
-              if (!neighborOpaque(0,0,-1)) pushFace(positionsO, 0,0,-1, lx, baseY+ly, lz, tileFor(id,'side'), isAlpha);
+              if (!neighborOpaque(0,0,-1) && (!props.liquid || !neighborLiquid(0,0,-1))) pushFace(target, 0,0,-1, lx, baseY+ly, lz, tileFor(id,'side'));
             }
           }
         }
 
-        function buildMeshFor(isAlpha){
-          const p = isAlpha ? positionsA : positionsO;
-          const n = isAlpha ? normalsA : normalsO;
-          const u = isAlpha ? uvsA : uvsO;
-          const idx = isAlpha ? indicesA : indicesO;
+        function buildMeshFor(type){
+          const p = type==='alpha' ? positionsA : type==='water' ? positionsW : positionsO;
+          const n = type==='alpha' ? normalsA : type==='water' ? normalsW : normalsO;
+          const u = type==='alpha' ? uvsA : type==='water' ? uvsW : uvsO;
+          const idx = type==='alpha' ? indicesA : type==='water' ? indicesW : indicesO;
           if (p.length === 0) return null;
-          const mesh = new BABYLON.Mesh((isAlpha?'alpha':'opaque')+`_${col.cx}_${sy}_${col.cz}`, scene);
+          const mesh = new BABYLON.Mesh(`${type}`+`_${col.cx}_${sy}_${col.cz}`, scene);
           const vData = new BABYLON.VertexData();
           vData.positions = p;
           vData.normals = n;
           vData.uvs = u;
           vData.indices = idx;
           vData.applyToMesh(mesh);
-          mesh.material = isAlpha ? materialAlpha : materialOpaque;
-          mesh.checkCollisions = !isAlpha;
+          mesh.material = type==='alpha' ? materialAlpha : type==='water' ? materials.water : materialOpaque;
+          mesh.checkCollisions = type==='opaque';
           mesh.alwaysSelectAsActiveMesh = false;
           mesh.position.x = col.cx * CHUNK_SIZE;
           mesh.position.z = col.cz * CHUNK_SIZE;
@@ -472,14 +476,19 @@
 
         if (col.meshesOpaque[sy]) { col.meshesOpaque[sy].dispose(); col.meshesOpaque[sy] = null; }
         if (col.meshesAlpha[sy]) { col.meshesAlpha[sy].dispose(); col.meshesAlpha[sy] = null; }
+        if (!col.meshesWater) col.meshesWater = new Array(NUM_SUBCHUNKS);
+        if (col.meshesWater[sy]) { col.meshesWater[sy].dispose(); col.meshesWater[sy] = null; }
 
-        const meshO = buildMeshFor(false);
-        const meshA = buildMeshFor(true);
+        const meshO = buildMeshFor('opaque');
+        const meshA = buildMeshFor('alpha');
+        const meshW = buildMeshFor('water');
         col.meshesOpaque[sy] = meshO;
         col.meshesAlpha[sy] = meshA;
+        col.meshesWater[sy] = meshW;
 
         positionsO.length = 0; normalsO.length = 0; uvsO.length = 0; indicesO.length = 0;
         positionsA.length = 0; normalsA.length = 0; uvsA.length = 0; indicesA.length = 0;
+        positionsW.length = 0; normalsW.length = 0; uvsW.length = 0; indicesW.length = 0;
       }
     }
 
@@ -615,9 +624,16 @@
 
     // Main bootstrap
     const canvas = document.getElementById('game');
+    // Ensure canvas can receive keyboard focus
+    canvas.tabIndex = 1;
     const engine = new BABYLON.Engine(canvas, true, { preserveDrawingBuffer: false, stencil: false, antialias: true });
     const scene = new BABYLON.Scene(engine);
     scene.collisionsEnabled = true;
+    // Sky and fog for better visuals
+    scene.clearColor = new BABYLON.Color4(0.55, 0.75, 0.98, 1.0);
+    scene.fogMode = BABYLON.Scene.FOGMODE_EXP2;
+    scene.fogDensity = 0.0045;
+    scene.fogColor = new BABYLON.Color3(0.55, 0.75, 0.98);
 
     const camera = new BABYLON.UniversalCamera("cam", new BABYLON.Vector3(0, 70, 0), scene);
     camera.attachControl(canvas, true);
@@ -628,6 +644,11 @@
     camera.ellipsoid = new BABYLON.Vector3(0.35, 0.9, 0.35);
     camera.checkCollisions = true;
     camera.applyGravity = true;
+    // Enable WASD in addition to arrows
+    camera.keysUp = [87, 38];
+    camera.keysDown = [83, 40];
+    camera.keysLeft = [65, 37];
+    camera.keysRight = [68, 39];
     scene.gravity = new BABYLON.Vector3(0, -0.8, 0);
 
     const lightHemi = new BABYLON.HemisphericLight("hemi", new BABYLON.Vector3(0,1,0), scene);
@@ -663,7 +684,17 @@
     matAlpha.needDepthPrePass = true;
     matAlpha.freeze();
 
-    const materials = { atlas: atlasTexture, opaque: matOpaque, alpha: matAlpha };
+    const matWater = new BABYLON.StandardMaterial("matWater", scene);
+    matWater.diffuseTexture = atlasTexture;
+    matWater.alpha = 0.5;
+    matWater.specularColor = new BABYLON.Color3(0,0,0);
+    matWater.backFaceCulling = false;
+    matWater.transparencyMode = BABYLON.Material.MATERIAL_ALPHABLEND;
+    matWater.separateCullingPass = true;
+    matWater.needDepthPrePass = true;
+    matWater.freeze();
+
+    const materials = { atlas: atlasTexture, opaque: matOpaque, alpha: matAlpha, water: matWater };
 
     // World and chunk manager
     let world = null;
@@ -711,6 +742,44 @@
         if (num>=1 && num<=8){ setSelected(num-1); }
       }
     });
+    // Fly toggle
+    let flyMode = false;
+    let sprinting = false;
+    let flyUp = false, flyDown = false;
+    window.addEventListener('keydown', (e)=>{
+      if (e.code === 'KeyF'){
+        flyMode = !flyMode;
+        camera.applyGravity = !flyMode;
+        camera.checkCollisions = !flyMode;
+        camera.speed = flyMode ? 0.6 : (sprinting ? 0.6 : 0.35);
+      }
+      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight'){
+        sprinting = true;
+        if (!flyMode) camera.speed = 0.6;
+        else flyDown = true; // in fly: Shift = descend
+      }
+      if (e.code === 'Space'){
+        if (flyMode) flyUp = true; else {
+          // simple jump if on ground (check block below)
+          const bx = Math.floor(camera.position.x);
+          const by = Math.floor(camera.position.y - 1.1);
+          const bz = Math.floor(camera.position.z);
+          const under = world ? world.getBlock(bx, by, bz) : BLOCK.Air;
+          if (under !== BLOCK.Air && !BlockProps[under].liquid) {
+            camera.cameraDirection.y = 0.6;
+          }
+        }
+      }
+    });
+    window.addEventListener('keyup', (e)=>{
+      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight'){
+        sprinting = false;
+        if (!flyMode) camera.speed = 0.35; else flyDown = false;
+      }
+      if (e.code === 'Space'){
+        if (flyMode) flyUp = false;
+      }
+    });
 
     function startGame() {
       overlay.classList.add('hidden');
@@ -718,7 +787,14 @@
       world = new World(seed);
       chunkManager.world = world;
       chunkManager.setViewDistance(parseInt(viewDistInput.value,10) || DEFAULTS.viewDistance);
-      camera.position.set(0, 80, 0);
+      // Place player near spawn terrain height
+      const scale = 1/64;
+      const hBase = world.perlin.fbm2(0*scale, 0*scale, 5, 2.0, 0.5);
+      const spawnY = Math.max(Math.floor(SEA_LEVEL + hBase*18) + 6, SEA_LEVEL + 6);
+      camera.position.set(0, spawnY, 0);
+      // Try to capture pointer and focus for immediate controls
+      try { canvas.requestPointerLock?.(); } catch(e) {}
+      canvas.focus();
       // reset manager state and kick generation
       chunkManager.processing = false;
       chunkManager.queue.length = 0;
@@ -766,6 +842,12 @@
       if (world) {
         chunkManager.updateCenter(camera.position.x, camera.position.z);
         chunkManager.tick();
+      }
+
+      // Fly vertical motion
+      if (flyMode) {
+        const vy = (flyUp?1:0) - (flyDown?1:0);
+        if (vy !== 0) camera.position.y += vy * (camera.speed) * (dt * 0.01);
       }
 
       scene.render();
