@@ -648,13 +648,13 @@
     camera.inertia = 0.5;
     camera.angularSensibility = 2000;
     camera.ellipsoid = new BABYLON.Vector3(0.35, 0.9, 0.35);
-    camera.checkCollisions = true;
-    camera.applyGravity = true;
+    camera.checkCollisions = false;
+    camera.applyGravity = false;
     // Enable WASD in addition to arrows
-    camera.keysUp = [87, 38];
-    camera.keysDown = [83, 40];
-    camera.keysLeft = [65, 37];
-    camera.keysRight = [68, 39];
+    camera.keysUp = [];
+    camera.keysDown = [];
+    camera.keysLeft = [];
+    camera.keysRight = [];
     scene.gravity = new BABYLON.Vector3(0, -0.8, 0);
 
     const lightHemi = new BABYLON.HemisphericLight("hemi", new BABYLON.Vector3(0,1,0), scene);
@@ -755,47 +755,179 @@
     let flyMode = false;
     let sprinting = false;
     let flyUp = false, flyDown = false;
+    const inputState = { f:false,b:false,l:false,r:false };
     window.addEventListener('keydown', (e)=>{
       if (e.code === 'KeyF'){
         flyMode = !flyMode;
-        camera.applyGravity = !flyMode;
-        camera.checkCollisions = !flyMode;
-        camera.speed = flyMode ? 0.6 : (sprinting ? 0.6 : 0.35);
+        // switching handled by controller
       }
       if (e.code === 'KeyG'){
         // Explicitly toggle off fly mode if needed
         flyMode = false;
-        camera.applyGravity = true;
-        camera.checkCollisions = true;
-        camera.speed = sprinting ? 0.6 : 0.35;
+        // controller will resume gravity
       }
       if (e.code === 'ShiftLeft' || e.code === 'ShiftRight'){
         sprinting = true;
-        if (!flyMode) camera.speed = 0.6;
-        else flyDown = true; // in fly: Shift = descend
+        if (flyMode) flyDown = true;
       }
       if (e.code === 'Space'){
         if (flyMode) flyUp = true; else {
-          // simple jump if on ground (check block below)
-          const bx = Math.floor(camera.position.x);
-          const by = Math.floor(camera.position.y - 1.1);
-          const bz = Math.floor(camera.position.z);
-          const under = world ? world.getBlock(bx, by, bz) : BLOCK.Air;
-          if (under !== BLOCK.Air && !BlockProps[under].liquid) {
-            camera.cameraDirection.y = 0.6;
-          }
+          // jump handled by controller
+          requestJump = true;
         }
       }
+      if (e.code==='KeyW' || e.code==='ArrowUp') inputState.f = true;
+      if (e.code==='KeyS' || e.code==='ArrowDown') inputState.b = true;
+      if (e.code==='KeyA' || e.code==='ArrowLeft') inputState.l = true;
+      if (e.code==='KeyD' || e.code==='ArrowRight') inputState.r = true;
     });
     window.addEventListener('keyup', (e)=>{
       if (e.code === 'ShiftLeft' || e.code === 'ShiftRight'){
         sprinting = false;
-        if (!flyMode) camera.speed = 0.35; else flyDown = false;
+        if (flyMode) flyDown = false;
       }
       if (e.code === 'Space'){
         if (flyMode) flyUp = false;
       }
+      if (e.code==='KeyW' || e.code==='ArrowUp') inputState.f = false;
+      if (e.code==='KeyS' || e.code==='ArrowDown') inputState.b = false;
+      if (e.code==='KeyA' || e.code==='ArrowLeft') inputState.l = false;
+      if (e.code==='KeyD' || e.code==='ArrowRight') inputState.r = false;
     });
+
+    // Simple voxel character controller
+    const player = {
+      eyeOffset: 1.6,
+      height: 1.8,
+      halfWidth: 0.35,
+      velocity: new BABYLON.Vector3(0,0,0),
+      grounded: false,
+    };
+    let requestJump = false;
+    function isSolid(wx, wy, wz){
+      const id = world ? world.getBlock(wx, wy, wz) : BLOCK.Air;
+      return id !== BLOCK.Air && BlockProps[id].solid && !BlockProps[id].liquid;
+    }
+    function aabbIntersects(x, yFeet, z){
+      const minX = x - player.halfWidth;
+      const maxX = x + player.halfWidth;
+      const minY = yFeet;
+      const maxY = yFeet + player.height;
+      const minZ = z - player.halfWidth;
+      const maxZ = z + player.halfWidth;
+      for (let yy = Math.floor(minY); yy <= Math.floor(maxY); yy++){
+        for (let zz = Math.floor(minZ); zz <= Math.floor(maxZ); zz++){
+          for (let xx = Math.floor(minX); xx <= Math.floor(maxX); xx++){
+            if (isSolid(xx, yy, zz)) return true;
+          }
+        }
+      }
+      return false;
+    }
+    function resolveAxis(x, yFeet, z, dx, dy, dz){
+      let nx = x, ny = yFeet, nz = z;
+      // X
+      if (dx !== 0){
+        const step = Math.sign(dx) * Math.min(Math.abs(dx), 0.6);
+        nx += step;
+        if (aabbIntersects(nx, ny, nz)){
+          // try step-up if grounded
+          if (player.grounded){
+            const stepHeight = 0.6;
+            const tryNy = ny + stepHeight;
+            if (!aabbIntersects(nx, tryNy, nz)) {
+              ny = tryNy;
+            } else {
+              nx = x; // cancel X
+            }
+          } else {
+            nx = x;
+          }
+        }
+      }
+      // Z
+      if (dz !== 0){
+        const step = Math.sign(dz) * Math.min(Math.abs(dz), 0.6);
+        nz += step;
+        if (aabbIntersects(nx, ny, nz)){
+          if (player.grounded){
+            const stepHeight = 0.6;
+            const tryNy = ny + stepHeight;
+            if (!aabbIntersects(nx, tryNy, nz)) {
+              ny = tryNy;
+            } else {
+              nz = z;
+            }
+          } else {
+            nz = z;
+          }
+        }
+      }
+      // Y
+      if (dy !== 0){
+        ny += dy;
+        if (aabbIntersects(nx, ny, nz)){
+          if (dy < 0){
+            // snap to top of block
+            ny = Math.floor(ny) + 1e-3;
+            player.grounded = true;
+          } else {
+            // hit ceiling
+            ny = Math.ceil(ny + player.height) - player.height - 1e-3;
+          }
+          dy = 0;
+        }
+      }
+      return { x:nx, yFeet:ny, z:nz, dy };
+    }
+
+    function tickPlayer(dtMs){
+      const dt = Math.min(dtMs, 50) * 0.001;
+      const pos = camera.position;
+      let yFeet = pos.y - player.eyeOffset;
+      player.grounded = false;
+
+      // Movement input (horizontal)
+      const forward = camera.getForwardRay().direction.clone(); forward.y = 0; forward.normalize();
+      const right = BABYLON.Vector3.Cross(forward, new BABYLON.Vector3(0,1,0)).negate();
+      let wish = new BABYLON.Vector3(0,0,0);
+      if (inputState.f) wish.addInPlace(forward);
+      if (inputState.b) wish.subtractInPlace(forward);
+      if (inputState.r) wish.addInPlace(right);
+      if (inputState.l) wish.subtractInPlace(right);
+      if (wish.lengthSquared() > 0) wish.normalize();
+
+      const moveSpeed = (sprinting? 6.0 : 3.6); // m/s
+      const dx = wish.x * moveSpeed * dt;
+      const dz = wish.z * moveSpeed * dt;
+
+      // Gravity and jump (unless fly)
+      if (!flyMode){
+        player.velocity.y += (-10.0) * dt; // gravity
+        if (requestJump){
+          // allow jump if on ground (check slightly below)
+          const underSolid = aabbIntersects(pos.x, yFeet - 0.05, pos.z);
+          if (underSolid) player.velocity.y = 5.5;
+          requestJump = false;
+        }
+      } else {
+        // fly vertical and clear gravity
+        player.velocity.y = 0;
+        if (flyUp) player.velocity.y += 6.0;
+        if (flyDown) player.velocity.y -= 6.0;
+      }
+
+      const dy = player.velocity.y * dt;
+      const solved = resolveAxis(pos.x, yFeet, pos.z, dx, dy, dz);
+      // if grounded by snap, zero vy
+      if (player.grounded && solved.dy === 0) player.velocity.y = 0;
+
+      // apply
+      yFeet = solved.yFeet;
+      camera.position.x = solved.x;
+      camera.position.z = solved.z;
+      camera.position.y = yFeet + player.eyeOffset;
+    }
 
     function startGame() {
       overlay.classList.add('hidden');
@@ -808,9 +940,6 @@
       const hBase = world.perlin.fbm2(0*scale, 0*scale, 5, 2.0, 0.5);
       const spawnY = Math.max(Math.floor(SEA_LEVEL + hBase*18) + 6, SEA_LEVEL + 6);
       camera.position.set(0, spawnY, 0);
-      // Disable gravity until initial area is ready
-      camera.applyGravity = false;
-      camera.checkCollisions = false;
       try { canvas.requestPointerLock?.(); } catch(e) {}
       canvas.focus();
       // reset manager state and build initial area synchronously (3x3 around spawn)
@@ -830,9 +959,6 @@
       }
       // Fill queue for the rest
       chunkManager.rebuildQueue();
-      // Re-enable collisions and gravity
-      camera.checkCollisions = true;
-      camera.applyGravity = true;
     }
 
     btnStart.addEventListener('click', startGame);
@@ -870,19 +996,16 @@
       if (breakCooldown>0) breakCooldown -= dt; if (breakCooldown<0) breakCooldown=0;
       if (placeCooldown>0) placeCooldown -= dt; if (placeCooldown<0) placeCooldown=0;
 
-      camera._computeLocalCameraSpeed();
       if (world) {
         chunkManager.updateCenter(camera.position.x, camera.position.z);
         chunkManager.tick();
         // Process some generation/meshing work per frame
         chunkManager.processBudget(10);
+        // Update player physics
+        tickPlayer(dt);
       }
 
-      // Fly vertical motion
-      if (flyMode) {
-        const vy = (flyUp?1:0) - (flyDown?1:0);
-        if (vy !== 0) camera.position.y += vy * (camera.speed) * (dt * 0.01);
-      }
+      // no direct camera.move here; physics controls movement
 
       scene.render();
 
