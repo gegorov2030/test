@@ -318,17 +318,10 @@
             const wz = cz*CHUNK_SIZE + z;
             const hBase = this.perlin.fbm2(wx*scale, wz*scale, 5, 2.0, 0.5); // -1..1
             const height = Math.floor(SEA_LEVEL + hBase*18);
-            // Terrain layers
-            for (let y=0; y<WORLD_HEIGHT; y++){
-              if (y > height) {
-                if (y <= SEA_LEVEL) {
-                  col.set(x,y,z, BLOCK.Water);
-                }
-                continue;
-              }
+            // Terrain layers only up to height
+            for (let y=0; y<=height; y++){
               const depth = height - y;
               if (depth === 0) {
-                // top block depends on biome-ish: sand near low heights
                 if (height < SEA_LEVEL + 2) col.set(x,y,z, BLOCK.Sand);
                 else col.set(x,y,z, BLOCK.Grass);
               } else if (depth <= 3) {
@@ -338,9 +331,14 @@
                 col.set(x,y,z, BLOCK.Stone);
               }
             }
-            // Carve caves using 3D noise threshold
+            // Fill water up to sea level
+            if (height < SEA_LEVEL) {
+              for (let y=height+1; y<=SEA_LEVEL; y++) col.set(x,y,z, BLOCK.Water);
+            }
+            // Carve caves using noise threshold inside ground
             const caveScale = 1/32;
-            for (let y=8; y<height-3; y++){
+            const maxCaveY = Math.max(8, height-3);
+            for (let y=8; y<maxCaveY; y++){
               const n = this.perlin.fbm2(wx*caveScale, (wz+y*3)*caveScale, 3, 2.0, 0.5);
               if (n > 0.35) {
                 col.set(x,y,z,BLOCK.Air);
@@ -572,26 +570,30 @@
           }
         }
         this.queue.sort((a,b)=>a.dist2-b.dist2);
-        this.processNext();
       }
       processNext(){
-        if (this.processing) return;
-        if (!this.world) return;
+        if (!this.world) return false;
         const task = this.queue.shift();
-        if (!task) return;
-        this.processing = true;
+        if (!task) return false;
         const col = this.world.getColumn(task.cx, task.cz);
         if (!col.subchunks.some(Boolean)) {
           this.world.generateColumn(task.cx, task.cz);
         }
         buildSubchunkMeshes(this.scene, this.materials.atlas, this.materials.opaque, this.materials.alpha, this.world, col);
-        this.processing = false;
-        // schedule next to yield to frame
-        setTimeout(()=>this.processNext(), 0);
+        return true;
+      }
+      processBudget(maxMs){
+        const start = performance.now();
+        let processed = 0;
+        while (performance.now() - start < maxMs) {
+          if (!this.processNext()) break;
+          processed++;
+        }
+        return processed;
       }
       tick(){
         if (!this.world) return;
-        // Could check for dirty columns and rebuild
+        // Rebuild dirty columns
         if (this.world.dirtyColumns.size>0){
           for (const k of this.world.dirtyColumns){
             const [cxStr, czStr] = k.split(',');
@@ -792,15 +794,31 @@
       const hBase = world.perlin.fbm2(0*scale, 0*scale, 5, 2.0, 0.5);
       const spawnY = Math.max(Math.floor(SEA_LEVEL + hBase*18) + 6, SEA_LEVEL + 6);
       camera.position.set(0, spawnY, 0);
-      // Try to capture pointer and focus for immediate controls
+      // Disable gravity until initial area is ready
+      camera.applyGravity = false;
+      camera.checkCollisions = false;
       try { canvas.requestPointerLock?.(); } catch(e) {}
       canvas.focus();
-      // reset manager state and kick generation
+      // reset manager state and build initial area synchronously (3x3 around spawn)
       chunkManager.processing = false;
       chunkManager.queue.length = 0;
       chunkManager.updateCenter(camera.position.x, camera.position.z);
+      // Prime a small ring
+      const cx0 = Math.floor(camera.position.x/CHUNK_SIZE);
+      const cz0 = Math.floor(camera.position.z/CHUNK_SIZE);
+      for (let dz=-1; dz<=1; dz++){
+        for (let dx=-1; dx<=1; dx++){
+          const cx = cx0+dx, cz = cz0+dz;
+          world.generateColumn(cx, cz);
+          const col = world.getColumn(cx,cz);
+          buildSubchunkMeshes(scene, materials.atlas, materials.opaque, materials.alpha, world, col);
+        }
+      }
+      // Fill queue for the rest
       chunkManager.rebuildQueue();
-      chunkManager.processNext();
+      // Re-enable collisions and gravity
+      camera.checkCollisions = true;
+      camera.applyGravity = true;
     }
 
     btnStart.addEventListener('click', startGame);
@@ -842,6 +860,8 @@
       if (world) {
         chunkManager.updateCenter(camera.position.x, camera.position.z);
         chunkManager.tick();
+        // Process some generation/meshing work per frame
+        chunkManager.processBudget(10);
       }
 
       // Fly vertical motion
