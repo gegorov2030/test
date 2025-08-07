@@ -436,17 +436,17 @@
               const neighborLiquid = (nx,ny,nz) => BlockProps[neighbor(nx,ny,nz)].liquid;
               const target = props.liquid ? [positionsW, normalsW, uvsW, indicesW] : (isAlpha ? [positionsA, normalsA, uvsA, indicesA] : [positionsO, normalsO, uvsO, indicesO]);
               // +X
-              if (!neighborOpaque(1,0,0) && (!props.liquid || !neighborLiquid(1,0,0))) pushFace(target, +1,0,0, lx, baseY+ly, lz, tileFor(id,'side'));
+              if (!neighborOpaque(1,0,0) && (!props.liquid || !neighborLiquid(1,0,0))) pushFace(target, +1,0,0, lx, ly, lz, tileFor(id,'side'));
               // -X
-              if (!neighborOpaque(-1,0,0) && (!props.liquid || !neighborLiquid(-1,0,0))) pushFace(target, -1,0,0, lx, baseY+ly, lz, tileFor(id,'side'));
+              if (!neighborOpaque(-1,0,0) && (!props.liquid || !neighborLiquid(-1,0,0))) pushFace(target, -1,0,0, lx, ly, lz, tileFor(id,'side'));
               // +Y
-              if (!neighborOpaque(0,1,0) && (!props.liquid || !neighborLiquid(0,1,0))) pushFace(target, 0,1,0, lx, baseY+ly, lz, tileFor(id,'top'));
+              if (!neighborOpaque(0,1,0) && (!props.liquid || !neighborLiquid(0,1,0))) pushFace(target, 0,1,0, lx, ly, lz, tileFor(id,'top'));
               // -Y
-              if (!neighborOpaque(0,-1,0) && (!props.liquid || !neighborLiquid(0,-1,0))) pushFace(target, 0,-1,0, lx, baseY+ly, lz, tileFor(id,'bottom'));
+              if (!neighborOpaque(0,-1,0) && (!props.liquid || !neighborLiquid(0,-1,0))) pushFace(target, 0,-1,0, lx, ly, lz, tileFor(id,'bottom'));
               // +Z
-              if (!neighborOpaque(0,0,1) && (!props.liquid || !neighborLiquid(0,0,1))) pushFace(target, 0,0,1, lx, baseY+ly, lz, tileFor(id,'side'));
+              if (!neighborOpaque(0,0,1) && (!props.liquid || !neighborLiquid(0,0,1))) pushFace(target, 0,0,1, lx, ly, lz, tileFor(id,'side'));
               // -Z
-              if (!neighborOpaque(0,0,-1) && (!props.liquid || !neighborLiquid(0,0,-1))) pushFace(target, 0,0,-1, lx, baseY+ly, lz, tileFor(id,'side'));
+              if (!neighborOpaque(0,0,-1) && (!props.liquid || !neighborLiquid(0,0,-1))) pushFace(target, 0,0,-1, lx, ly, lz, tileFor(id,'side'));
             }
           }
         }
@@ -466,8 +466,9 @@
           vData.applyToMesh(mesh);
           mesh.material = type==='alpha' ? materialAlpha : type==='water' ? materials.water : materialOpaque;
           mesh.checkCollisions = type==='opaque';
-          mesh.alwaysSelectAsActiveMesh = false;
+          mesh.alwaysSelectAsActiveMesh = true;
           mesh.position.x = col.cx * CHUNK_SIZE;
+          mesh.position.y = baseY;
           mesh.position.z = col.cz * CHUNK_SIZE;
           return mesh;
         }
