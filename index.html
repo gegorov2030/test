@@ -469,7 +469,7 @@
           mesh.position.x = col.cx * CHUNK_SIZE;
           mesh.position.y = baseY;
           mesh.position.z = col.cz * CHUNK_SIZE;
-          mesh.renderingGroupId = (type==='opaque') ? 0 : (type==='alpha' ? 1 : 2);
+          mesh.renderingGroupId = 0;
           // Ensure proper world matrix and bounding infos
           mesh.computeWorldMatrix(true);
           mesh.refreshBoundingInfo(true);
@@ -687,23 +687,25 @@
 
     const matAlpha = new BABYLON.StandardMaterial("matAlpha", scene);
     matAlpha.diffuseTexture = atlasTexture;
-    matAlpha.alpha = 0.65;
+    matAlpha.alpha = 1.0;
     matAlpha.specularColor = new BABYLON.Color3(0,0,0);
     matAlpha.backFaceCulling = false;
-    matAlpha.transparencyMode = BABYLON.Material.MATERIAL_ALPHABLEND;
-    matAlpha.separateCullingPass = true;
-    matAlpha.needDepthPrePass = true;
+    matAlpha.transparencyMode = BABYLON.Material.MATERIAL_ALPHATEST;
+    matAlpha.alphaCutOff = 0.4;
+    matAlpha.separateCullingPass = false;
+    matAlpha.needDepthPrePass = false;
     matAlpha.freeze();
 
     const matWater = new BABYLON.StandardMaterial("matWater", scene);
     matWater.diffuseTexture = atlasTexture;
-    matWater.alpha = 0.7;
+    matWater.alpha = 1.0;
     matWater.emissiveColor = new BABYLON.Color3(0.15, 0.28, 0.7);
     matWater.disableLighting = true;
     matWater.specularColor = new BABYLON.Color3(0,0,0);
     matWater.backFaceCulling = false;
-    matWater.transparencyMode = BABYLON.Material.MATERIAL_ALPHABLEND;
-    matWater.separateCullingPass = true;
+    matWater.transparencyMode = BABYLON.Material.MATERIAL_ALPHATEST;
+    matWater.alphaCutOff = 0.1;
+    matWater.separateCullingPass = false;
     matWater.needDepthPrePass = false;
     matWater.fogEnabled = false;
     matWater.freeze();
